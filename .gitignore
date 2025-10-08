@@ -1,4 +1,7 @@
 /saved-models/*
 !/saved-models/.gitkeep
 
-/__pychache/
+/__pychache__/
+/__pychache__/*
+
+.DS_Store
