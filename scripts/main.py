@@ -16,23 +16,29 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import time
 import sys
 
 # Filter out warnings
 warnings.filterwarnings("ignore")
 
-# !!!!!!!!!
-# Load data
-# !!!!!!!!!
+# Current time stamp for synchrinization for saved model and model parameters
+curr_time = time.time()
+
+# !!!!!!!!!!!!!!!!!!
+# LOAD DATA
+# !!!!!!!!!!!!!!!!!!
+
 pluvicto_master_sheet_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/data-files/pluvicto_survival_clean_with_response_groups.csv"
 rna_seq_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/data-files/predictions_tumor_pluvicto.tsv"
 
 pluvicto_master_sheet = pd.read_csv(pluvicto_master_sheet_file, index_col = 0)
 rna_seq_data = pd.read_table(rna_seq_data_file, sep="\t", index_col = 0)
 
-# !!!!!!!!!!!
-# User imputs
-# !!!!!!!!!!!
+# !!!!!!!!!!!!!!!!!!!!
+# USER IMPUT
+# !!!!!!!!!!!!!!!!!!!!
+
 responder_group = "progression_group_survival_days_252_cutoff"
 
 # Hyperparameter dictionary
@@ -48,11 +54,11 @@ param_dict = {
 # Model args
 objective = "binary:logistic"
 tree_method = "hist"
-metrics = ["mlogloss"] # Only supports one metric
+metrics = ["logloss"] # Only supports one metric
 
-# ***************
-# Data processing
-# ***************
+# ********************
+# PROCESS DATA
+# ********************
 
 # Remove patients at C2 and with less than 10% TFx
 rna_seq_data, pluvicto_master_sheet = clean_patient_names(rna_seq_data, pluvicto_master_sheet, "C2", 0.10)
@@ -100,12 +106,12 @@ print()
 print(f"y_test: \n{y_test}")
 print()
 
-# **************
-# Start modeling
-# **************
+# *******************
+# TRAIN MODEL
+# *******************
 
 # Train model with nested 5 fold cross validation
-cv_results = nested_five_fold_cv(
+cv_results, file_dir = nested_five_fold_cv(
     X_train, 
     y_train,
     param_dict,
@@ -115,7 +121,8 @@ cv_results = nested_five_fold_cv(
     5, # Number of folds
     metrics,
     0, # Outputs model's performance every number boosts
-    30 # Stops model if performance doesn't increase after number of boosts
+    30, # Stops model if performance doesn't increase after number of boosts
+    curr_time, # For saving model parameters
 )
 
 # Print out results
@@ -127,7 +134,7 @@ param_df = pd.DataFrame([r["best_params"] for r in cv_results])
 
 median_params = param_df.median(numeric_only = True).to_dict()
 
-int_cols = ["max_depth", "max_delta_step", "num_class"]
+int_cols = ["max_depth", "max_delta_step"]
 for c in int_cols:
     if c in median_params:
         median_params[c] = int(round(median_params[c]))
@@ -153,16 +160,24 @@ model = xgb.train(
 
 print("model complete")
 
-# Save model to json
-model.save_model("xgb_model.json")
+# Save model as json
+filename = f"./{file_dir}/xgb_model.json"
+model.save_model(filename)
 print("saved model")
+
+# ***********************
+# TEST AND EVALUATE MODEL
+# ***********************
 
 # Make predictions on test set
 dtest_clf = xgb.DMatrix(X_test, label=y_test, enable_categorical=True)
 y_predicted_prob = model.predict(dtest_clf)
 
 # Finds best prediction from models output
-y_pred = np.argmax(y_predicted_prob, axis = 1)
+if objective == "multi:softprob":
+    y_pred = np.argmax(y_predicted_prob, axis = 1)
+else:
+    y_pred = (y_predicted_prob > 0.5).astype(int)
 
 # Evaluate accuracy of model
 accuracy = accuracy_score(y_test, y_pred)

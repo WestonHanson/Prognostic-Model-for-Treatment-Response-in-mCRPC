@@ -22,8 +22,12 @@ def clean_patient_names(rna_seq_data, pluvicto_master_sheet, timepoint, cutoff):
 
     Function:
     ---------
-        - Removes all patients that have specified timepoint.
+        
         - Returns the dataframe with the rows that are are greater than or equal to the cutoff.
+        - Removes all patients that have specified timepoint.
+        - Strips patient tags.
+        - Subset both dataframes to common patients.
+        - Return both dataframes.
 
     Returns:
     --------
@@ -32,7 +36,6 @@ def clean_patient_names(rna_seq_data, pluvicto_master_sheet, timepoint, cutoff):
         pluvicto_master_sheet:
             The updated dataframe.
     '''
-
     # Remove patients below cutoff
     pluvicto_master_sheet = pluvicto_master_sheet[pluvicto_master_sheet['TFx_C1'] >= cutoff]
 
@@ -61,7 +64,28 @@ def clean_patient_names(rna_seq_data, pluvicto_master_sheet, timepoint, cutoff):
     return rna_seq_data, pluvicto_master_sheet
 
 def combine_dataframes(rna_seq_data, pluvicto_master_sheet, columns_to_keep):
-    
+    '''
+    Parameters:
+    -----------
+        rna_seq_data: pandas dataframe
+            A dataframe with rna-seq data.
+        pluvicto_master_sheet: pandas dataframe
+            A dataframe with metadata.
+        columns_to_keep: List
+            A list of columns in pluvicto_master_sheet to keep.
+        
+
+    Function:
+    ---------
+        - Transpos rna_seq_data so it is patient_id x gene and turn it back into a dataframe.
+        - Then subset pluvicto_master_sheet to only the columns you want to keep.
+        - Merge dataframes into one on same patient_ids and return it.
+
+    Returns:
+    --------
+        combined_dfs:
+            A combined dataframe of rna_seq_data and pluvicto_master_sheet,
+    '''
     # Transpose rna-seq data
     rna_seq_data_T = rna_seq_data.T
 
@@ -70,8 +94,6 @@ def combine_dataframes(rna_seq_data, pluvicto_master_sheet, columns_to_keep):
 
     # Subset pluvicto_master_sheet to specific columns
     pluvicto_master_sheet = pluvicto_master_sheet[columns_to_keep]
-
-    print(pluvicto_master_sheet)
 
     combined_dfs = pd.merge(rna_seq_data_T, pluvicto_master_sheet, left_index = True, right_index = True, how='inner')
 

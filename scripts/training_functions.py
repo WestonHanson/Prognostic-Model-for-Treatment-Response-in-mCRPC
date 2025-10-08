@@ -10,7 +10,9 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
 from itertools import product
-import time
+import pickle
+import os
+import sys
 
 def five_fold_cv(training_matrix, params, boost_rounds, nfold, metrics, verbose_eval, early_stopping):
     '''
@@ -34,7 +36,7 @@ def five_fold_cv(training_matrix, params, boost_rounds, nfold, metrics, verbose_
 
     Function:
     ---------
-        - 
+        - Performs 5 fold cross validation on training data.
 
     Returns:
     --------
@@ -55,7 +57,7 @@ def five_fold_cv(training_matrix, params, boost_rounds, nfold, metrics, verbose_
     return cv_results
 
 
-def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds, nfold, metrics, verbose_eval, early_stopping):
+def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds, nfold, metrics, verbose_eval, early_stopping, curr_time):
     '''
     Parameters:
     -----------
@@ -79,26 +81,31 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
             Number of iterations the model will output performance.
         early_stopping: int
             Number of iterations to stop the model when no progress is being made on performance. 
-    
+        curr_time: string
+            Timestamp to name file directory.
 
     Function:
     ---------
-        - 
+        - Performs nested 5 fold cross validation.
+        - Makes sure X and y are dataframes then makes sure all columns are numeric or categorical.
+        - It does grid search on the parameter list and does a 5 fold cv for every combination.
+        - Finds best performing combination of parameters and saves that.
+        - Repeats that process for all 5 outer folds.
+        - Saves model parameters as a pickle and returns it.
 
     Returns:
     --------
         outer_results:
             Dictionary of cross validated results.
+        file_dir:
+            Timestamped file directory to save parameters and completed model.
     '''
 
     # Make sure X and y are pandas objs
     if isinstance(X, np.ndarray):
-        print("enter first if")
         X = pd.DataFrame(X)
     
     if isinstance(y, np.ndarray):
-        print("enter second if")
-
         y = pd.DataFrame(y)
 
     non_num_cols = X.select_dtypes(exclude=["number"]).columns
@@ -119,7 +126,11 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
 
         # Split outer fold
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]\
+
+        # Flatten y from 2D column vector to 1D array
+        y_train = y_train.values.ravel()
+        y_test = y_test.values.ravel()
 
         # Set up DMatrixes 
         dtrain = xgb.DMatrix(X_train, label = y_train, enable_categorical = True)
@@ -138,7 +149,8 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
             print()
             params = combo.copy()
             params['objective'] = objective
-            params['num_class'] = len(np.unique(y))
+            if object == "multi:softprob":
+                params['num_class'] = len(np.unique(y))
             params['eval_metric'] = metrics[0]
             params['tree_method'] = tree_method
 
@@ -169,7 +181,11 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
         
         # Test on outer test fold
         y_pred_prob = model.predict(dtest)
-        y_pred = np.argmax(y_pred_prob, axis = 1)
+
+        if objective == "multi:softprob":
+            y_pred = np.argmax(y_pred_prob, axis = 1)
+        else:
+            y_pred = (y_pred_prob > 0.5).astype(int)
 
         accuracy = accuracy_score(y_test, y_pred)
         print(f"Accuracy (outer fold {fold_num}): {accuracy:.4f}")
@@ -191,11 +207,20 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
     print(f"Mean Accuracy: {mean_accuracy}")
     print(f"Std Accuracy: {np.std([r['accuracy'] for r in outer_results]):.4f}")
 
+    # Create directory 
+    file_dir = os.path.join("..", "saved-models", f"{curr_time}_model_accuracy_{mean_accuracy:.4f}")
+    try:
+        os.mkdir(f"{file_dir}")
+        print(f"{file_dir} directory made.")
+    except FileExistsError:
+            print(f"{file_dir} directory already exists.")
+    except FileNotFoundError:
+        print(f"Error: Parent directory for {file_dir} does not exist.")
+        
     # Save parameters
-    curr_time = time.time()
-    filename = f"./saved-models/xgb_model_accuracy_{mean_accuracy:.4f}_{curr_time}.txt"
-    with open(filename, 'w') as file:
-        file.write(outer_results)
+    filename = os.path.join(file_dir, "xgb_model_parameters.pkl")
+    with open(filename, 'wb') as file:
+        pickle.dump(outer_results, file)
 
-    return outer_results
+    return outer_results, file_dir
     

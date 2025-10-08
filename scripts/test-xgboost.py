@@ -15,10 +15,14 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import time
 import sys
 
 # Filter out warnings
 warnings.filterwarnings("ignore")
+
+# Current time stamp for synchrinization for saved model and model parameters
+curr_time = time.time()
 
 # Load in data
 diamonds = sns.load_dataset("diamonds")
@@ -63,12 +67,12 @@ print()
 
 # Hyperparameter dictionary
 param_dict = {
-    'eta': [0.1, 0.3],
-    'max_depth': [3, 6],
-    'min_child_weight': [1, 2],
-    'max_delta_step': [0, 1],
-    'subsample': [0.8, 1.0],
-    'colsample_bytree': [0.8, 1.0]
+    'eta': [0.1],
+    # 'max_depth': [3, 6],
+    # 'min_child_weight': [1, 2],
+    # 'max_delta_step': [0, 1],
+    # 'subsample': [0.8, 1.0],
+    # 'colsample_bytree': [0.8, 1.0]
 }
 
 objective = "multi:softprob"
@@ -76,17 +80,18 @@ tree_method = "hist"
 metrics = ["mlogloss"]
 
 # Train model with nested 5 fold cross validation
-cv_results = nested_five_fold_cv(
+cv_results, file_dir = nested_five_fold_cv(
     X_train, 
     y_train,
     param_dict,
     objective,
     tree_method,
-    800, # Number of boosts
-    5, # Number of folds
+    1, # Number of boosts
+    3, # Number of folds
     metrics,
     0, # Outputs model's performance every number boosts
-    30 # Stops model if performance doesn't increase after number of boosts
+    30, # Stops model if performance doesn't increase after number of boosts
+    curr_time
 )
 
 # Print out results
@@ -124,8 +129,9 @@ model = xgb.train(
 
 print("model complete")
 
-# Save model to json
-model.save_model("xgb_model.json")
+# Save model as json
+filename = f"./{file_dir}/xgb_model.json"
+model.save_model(filename)
 print("saved model")
 
 # Make predictions on test set
