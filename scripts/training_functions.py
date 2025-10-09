@@ -126,7 +126,7 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
 
         # Split outer fold
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]\
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
         # Flatten y from 2D column vector to 1D array
         y_train = y_train.values.ravel()
@@ -149,7 +149,7 @@ def nested_five_fold_cv(X, y, params_dict, objective, tree_method, boost_rounds,
             print()
             params = combo.copy()
             params['objective'] = objective
-            if object == "multi:softprob":
+            if objective == "multi:softprob":
                 params['num_class'] = len(np.unique(y))
             params['eval_metric'] = metrics[0]
             params['tree_method'] = tree_method

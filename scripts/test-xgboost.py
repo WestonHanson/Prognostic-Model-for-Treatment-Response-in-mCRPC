@@ -14,8 +14,10 @@ import warnings
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from sklearn.preprocessing import OrdinalEncoder
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, auc, precision_recall_curve, average_precision_score
+from sklearn.preprocessing import label_binarize
 import time
+import matplotlib.pyplot as plt
 import sys
 
 # Filter out warnings
@@ -153,3 +155,25 @@ print()
 conf_matrix = confusion_matrix(y_test, y_pred)
 print(f"Confusion matrix: \n{conf_matrix}")
 
+# Compute ROC curve and AUC
+y_true_bin = label_binarize(y_test, classes=np.arange(5))
+fpr, tpr, _ = roc_curve(y_true_bin.ravel(), y_predicted_prob.ravel())
+roc_auc = auc(fpr, tpr)
+
+# Create figure
+plt.figure(figsize=(12, 5))
+
+# --- ROC Curve ---
+plt.subplot(1, 2, 1)
+plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC (AUC = {roc_auc:.3f})')
+plt.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+
+plt.tight_layout()
+plt.savefig(f"{file_dir}/roc_pr_curves.png", dpi=300, bbox_inches='tight')
+plt.close()
+
+print(f"ROC AUC: {roc_auc:.3f}")

@@ -46,7 +46,11 @@ FGA_data = pd.read_table(FGA_data_file, sep="\t", index_col=0)
 
 genomic_choice = "tfbs"
 
+tfx_cutoff = 0.03
+
 responder_group = "progression_group_survival_days_252_cutoff"
+
+predictor_values = ["LOH.Score_C1", "TMB_C1"]
 
 # Hyperparameter dictionary
 param_dict = {
@@ -78,7 +82,7 @@ print(f"genomic_data: \n{genomic_data}")
 print()
 
 # Remove patients at C2 and with less than 10% TFx
-genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, "C2", 0.10)
+genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, "C2", tfx_cutoff)
 print(f"genomic_data: \n{genomic_data}")
 print()
 print(f"pluvicto_master_sheet: \n{pluvicto_master_sheet}")
@@ -88,8 +92,9 @@ FGA_column_filtered = extract_FGA(FGA_data, "C1")
 print(f"FGA_column_filtered: \n{FGA_column_filtered}")
 print()
 
-# Combine dataframes
-combined_dfs = combine_dataframes(genomic_data, pluvicto_master_sheet, FGA_data, ["TFx_C1", "LOH.Score_C1", "TMB_C1", responder_group])
+# Append responder group to predictor_value and Combine dataframes
+predictor_values.append(responder_group)
+combined_dfs = combine_dataframes(genomic_data, pluvicto_master_sheet, FGA_data, predictor_values)
 
 print(f"combined_dfs: \n{combined_dfs}")
 print()
@@ -99,47 +104,45 @@ ltbx_cohort_filter = combined_dfs.index.str.contains("FHL")
 mc_cohort = combined_dfs[~ltbx_cohort_filter]
 ltbx_cohort = combined_dfs[ltbx_cohort_filter]
 
-# Extract features and target arrays
-X_mc_cohort, y_mc_cohort = mc_cohort.drop(columns = responder_group, axis = 1), mc_cohort[[responder_group]]
-X_ltbx_cohort, y_ltbx_cohort = ltbx_cohort.drop(columns = responder_group, axis = 1), ltbx_cohort[[responder_group]]
-
-print(f"X_mc_cohort: \n{X_mc_cohort}")
-print()
-print(f"y_mc_cohort: \n{y_mc_cohort}")
-
-# Encode y to numeric (binary)
-y_mc_cohort_encoded = OrdinalEncoder().fit_transform(y_mc_cohort)
-y_ltbx_cohort_encoded = OrdinalEncoder().fit_transform(y_ltbx_cohort)
-
-print(f"y_mc_cohort_encoded: \n{y_mc_cohort_encoded}")
-print(f"y_ltbx_cohort_encoded: \n{y_ltbx_cohort_encoded}")
-
-# Extract text features
-cats = X_mc_cohort.select_dtypes(exclude = 'number')
-
-print(cats)
-
-# Convert to Pandas category
-for col in cats:
-    X_mc_cohort[col] = X_mc_cohort[col].astype('category')
-
-print(X_mc_cohort.dtypes)
-
 # Split the data (Automatically splits into 25:75, stratify keeps the same proporition of 0/1 in testing and training data)
-X_train_mc_cohort, X_test_mc_cohort, y_train_mc_cohort, y_test_mc_cohort = train_test_split(X_mc_cohort, y_mc_cohort_encoded, random_state = 1, stratify = y_mc_cohort_encoded)
+mc_train_indices, mc_test_indices = train_test_split(
+        mc_cohort.index, 
+        test_size=0.25, 
+        random_state=1, 
+        stratify=mc_cohort[responder_group]
+    )
 
-# Normalize each training/testing set by zscore
-X_train_mc_cohort = standard_scaling(X_train_mc_cohort, responder_group, 0)
-X_test_mc_cohort = standard_scaling(X_test_mc_cohort, responder_group, 0)
-ltbx_cohort_norm = standard_scaling(ltbx_cohort, responder_group, 0)
+mc_train = mc_cohort.loc[mc_train_indices]
+mc_test = mc_cohort.loc[mc_test_indices]
 
-print(f"X_train_mc_cohort: \n{X_train_mc_cohort}")
+# Normalize
+mc_train_norm = standard_scaling(mc_train, responder_group, axis=1)
+mc_test_norm = standard_scaling(mc_test, responder_group, axis=1)
+ltbx_norm = standard_scaling(ltbx_cohort, responder_group, axis=1)
+
+# Extract features and target arrays
+X_train_mc, y_train_mc = mc_train_norm.drop(columns = responder_group, axis = 1), mc_train_norm[[responder_group]]
+X_test_mc, y_test_mc = mc_test_norm.drop(columns = responder_group, axis = 1), mc_test_norm[[responder_group]]
+X_ltbx, y_ltbx = ltbx_norm.drop(columns = responder_group, axis = 1), ltbx_norm[[responder_group]]
+
+encoder = OrdinalEncoder()
+y_train_mc_encoded = encoder.fit_transform(y_train_mc)
+y_test_mc_encoded = encoder.fit_transform(y_test_mc)
+y_ltbx_encoded = encoder.fit_transform(y_ltbx)
+
+X_train_mc, X_test_mc, X_ltbx = prepare_categorical_features(X_train_mc), prepare_categorical_features(X_test_mc), prepare_categorical_features(X_ltbx)
+
+print(f"X_train_mc: \n{X_train_mc}")
 print()
-print(f"X_test_mc_cohort: \n{X_test_mc_cohort}")
+print(f"X_test_mc: \n{X_test_mc}")
 print()
-print(f"y_train_mc_cohort: \n{y_train_mc_cohort}")
+print(f"y_train_mc_encoded: \n{y_train_mc_encoded}")
 print()
-print(f"y_test_mc_cohort: \n{y_test_mc_cohort}")
+print(f"y_test_mc_encoded: \n{y_test_mc_encoded}")
+print()
+print(f"X_ltbx: \n{X_ltbx}")
+print()
+print(f"y_ltbx_encoded: \n{y_ltbx_encoded}")
 print()
 
 # *******************
@@ -148,8 +151,8 @@ print()
 
 # Train model with nested 5 fold cross validation
 cv_results, file_dir = nested_five_fold_cv(
-    X_train_mc_cohort, 
-    y_train_mc_cohort,
+    X_train_mc, 
+    y_train_mc_encoded,
     param_dict,
     objective,
     tree_method,
@@ -166,25 +169,16 @@ print(f"\nResults: \n{cv_results}")
 print()
 
 # Find best parameters
-param_df = pd.DataFrame([r["best_params"] for r in cv_results])
+median_params, best_boost_round = get_median_params(cv_results)
 
-median_params = param_df.median(numeric_only = True).to_dict()
+print(f"median_params: \n{median_params}\n")
 
-int_cols = ["max_depth", "max_delta_step"]
-for c in int_cols:
-    if c in median_params:
-        median_params[c] = int(round(median_params[c]))
-
-best_boost_round = int(np.median([r['best_round'] for r in cv_results]))
-print(f"median_params: \n{median_params}")
-print(f"best_boost_round: \n{best_boost_round}")
-
-dtrain_clf = xgb.DMatrix(X_train_mc_cohort, label = y_train_mc_cohort, enable_categorical = True)
-print(f"dtrain_clf: \n{dtrain_clf}")
+dtrain_mc_train = xgb.DMatrix(X_train_mc, label = y_train_mc_encoded, enable_categorical = True)
+print(f"dtrain_clf: \n{dtrain_mc_train}")
 
 # Train model
 model = xgb.train(
-    dtrain = dtrain_clf,
+    dtrain = dtrain_mc_train,
     num_boost_round = best_boost_round,
     params = {
         **median_params,
@@ -210,7 +204,7 @@ print(f"feature_importance: {feature_importance}")
 # ****************************************************
 
 # Make predictions on test set
-dtest_mc_cohort = xgb.DMatrix(X_test_mc_cohort, label=y_test_mc_cohort, enable_categorical=True)
+dtest_mc_cohort = xgb.DMatrix(X_test_mc, label=y_test_mc_encoded, enable_categorical=True)
 y_predicted_prob = model.predict(dtest_mc_cohort)
 
 # Finds best prediction from models output
@@ -220,15 +214,15 @@ else:
     y_pred = (y_predicted_prob > 0.5).astype(int)
 
 # Evaluate accuracy of model
-accuracy = accuracy_score(y_test_mc_cohort, y_pred)
+accuracy = accuracy_score(y_test_mc_encoded, y_pred)
 print(f"\nTest Accuracy: {accuracy}")
 print()
 
-classfication = classification_report(y_test_mc_cohort, y_pred)
+classfication = classification_report(y_test_mc_encoded, y_pred)
 print(f"Classification: \n{classfication}")
 print()
 
-conf_matrix = confusion_matrix(y_test_mc_cohort, y_pred)
+conf_matrix = confusion_matrix(y_test_mc_encoded, y_pred)
 print(f"Confusion matrix: \n{conf_matrix}")
 
 # ******************************
@@ -236,14 +230,21 @@ print(f"Confusion matrix: \n{conf_matrix}")
 # ******************************
 
 # Normalize whole cohort at once
-X_mc_cohort = standard_scaling(X_mc_cohort, responder_group, 0)
+mc_cohort_norm = standard_scaling(mc_cohort, responder_group, 0)
 
-full_dtest_mc_cohort = xgb.DMatrix(X_mc_cohort, label=y_mc_cohort_encoded, enable_categorical=True)
-print(f"full_dtest_mc_cohort: \n{full_dtest_mc_cohort}")
+# Split data for training
+X_mc_full, y_mc_full = mc_cohort_norm.drop(columns=responder_group, axis=1), mc_cohort_norm[[responder_group]]
+y_mc_full_encoded = encoder.fit_transform(y_mc_full)
+
+# Prepare categorical features
+X_mc_full = prepare_categorical_features(X_mc_full)
+
+dtest_mc_full = xgb.DMatrix(X_mc_full, label=y_mc_full_encoded, enable_categorical=True)
+print(f"full_dtest_mc_cohort: \n{dtest_mc_full}")
 
 # Train model
 full_model = xgb.train(
-    dtrain = full_dtest_mc_cohort,
+    dtrain = dtest_mc_full,
     num_boost_round = best_boost_round,
     params = {
         **median_params,
@@ -268,7 +269,7 @@ print(f"feature_importance: {feature_importance}")
 # TEST AND EVALUATE MODEL ON 2ND COHORT
 # *************************************
 
-full_ltbx_cohort = xgb.DMatrix(X_ltbx_cohort, label=y_ltbx_cohort_encoded, enable_categorical=True)
+full_ltbx_cohort = xgb.DMatrix(X_ltbx, label=y_ltbx_encoded, enable_categorical=True)
 
 # Make predictions on ltbx cohort
 y_predicted_prob = full_model.predict(full_ltbx_cohort)
@@ -280,24 +281,24 @@ else:
     y_pred = (y_predicted_prob > 0.5).astype(int)
 
 # Evaluate accuracy of model
-accuracy = accuracy_score(y_ltbx_cohort_encoded, y_pred)
+accuracy = accuracy_score(y_ltbx_encoded, y_pred)
 print(f"\nTest Accuracy: {accuracy}")
 print()
 
-classfication = classification_report(y_ltbx_cohort_encoded, y_pred)
+classfication = classification_report(y_ltbx_encoded, y_pred)
 print(f"Classification: \n{classfication}")
 print()
 
-conf_matrix = confusion_matrix(y_ltbx_cohort_encoded, y_pred)
+conf_matrix = confusion_matrix(y_ltbx_encoded, y_pred)
 print(f"Confusion matrix: \n{conf_matrix}")
 
 # Compute ROC curve and AUC
-fpr, tpr, roc_thresholds = roc_curve(y_ltbx_cohort_encoded, y_predicted_prob)
+fpr, tpr, roc_thresholds = roc_curve(y_ltbx_encoded, y_predicted_prob)
 roc_auc = auc(fpr, tpr)
 
 # Compute Precision–Recall curve and AUC
-precision, recall, pr_thresholds = precision_recall_curve(y_ltbx_cohort_encoded, y_predicted_prob)
-pr_auc = average_precision_score(y_ltbx_cohort_encoded, y_predicted_prob)
+precision, recall, pr_thresholds = precision_recall_curve(y_ltbx_encoded, y_predicted_prob)
+pr_auc = average_precision_score(y_ltbx_encoded, y_predicted_prob)
 
 # Create figure
 plt.figure(figsize=(12, 5))
