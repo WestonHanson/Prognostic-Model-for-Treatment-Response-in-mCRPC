@@ -6,6 +6,7 @@
 # Script imports
 from training_functions import *
 from data_processing_functions import *
+from plotting_functions import *
 
 # Package imports
 import seaborn as sns
@@ -125,10 +126,11 @@ X_train_mc, y_train_mc = mc_train_norm.drop(columns = responder_group, axis = 1)
 X_test_mc, y_test_mc = mc_test_norm.drop(columns = responder_group, axis = 1), mc_test_norm[[responder_group]]
 X_ltbx, y_ltbx = ltbx_norm.drop(columns = responder_group, axis = 1), ltbx_norm[[responder_group]]
 
-encoder = OrdinalEncoder()
+# Encode responder groups as 0/1
+encoder = OrdinalEncoder(categories=[["non-responder", "responder"]])
 y_train_mc_encoded = encoder.fit_transform(y_train_mc)
-y_test_mc_encoded = encoder.fit_transform(y_test_mc)
-y_ltbx_encoded = encoder.fit_transform(y_ltbx)
+y_test_mc_encoded = encoder.transform(y_test_mc)
+y_ltbx_encoded = encoder.transform(y_ltbx)
 
 X_train_mc, X_test_mc, X_ltbx = prepare_categorical_features(X_train_mc), prepare_categorical_features(X_test_mc), prepare_categorical_features(X_ltbx)
 
@@ -225,6 +227,17 @@ print()
 conf_matrix = confusion_matrix(y_test_mc_encoded, y_pred)
 print(f"Confusion matrix: \n{conf_matrix}")
 
+# Compute ROC curve and AUC
+fpr, tpr, roc_thresholds = roc_curve(y_test_mc_encoded, y_predicted_prob)
+roc_auc = auc(fpr, tpr)
+
+# Compute Precision–Recall curve and AUC
+precision, recall, pr_thresholds = precision_recall_curve(y_test_mc_encoded, y_predicted_prob)
+pr_auc = average_precision_score(y_test_mc_encoded, y_predicted_prob)
+
+file_name = "test_mc_cohort_roc_auc_curve"
+create_ROC_AUC_precision_recall_curves(fpr, tpr, roc_auc, precision, recall, pr_auc, file_dir, file_name)
+
 # ******************************
 # TRAIN MODEL ON FULL 1ST COHORT
 # ******************************
@@ -274,11 +287,15 @@ full_ltbx_cohort = xgb.DMatrix(X_ltbx, label=y_ltbx_encoded, enable_categorical=
 # Make predictions on ltbx cohort
 y_predicted_prob = full_model.predict(full_ltbx_cohort)
 
+print(f"\npredicted prob: {y_predicted_prob}\n")
+
 # Finds best prediction from models output
 if objective == "multi:softprob":
     y_pred = np.argmax(y_predicted_prob, axis = 1)
 else:
     y_pred = (y_predicted_prob > 0.5).astype(int)
+
+print(f"y_pred: {y_pred}\n")
 
 # Evaluate accuracy of model
 accuracy = accuracy_score(y_ltbx_encoded, y_pred)
@@ -300,29 +317,10 @@ roc_auc = auc(fpr, tpr)
 precision, recall, pr_thresholds = precision_recall_curve(y_ltbx_encoded, y_predicted_prob)
 pr_auc = average_precision_score(y_ltbx_encoded, y_predicted_prob)
 
-# Create figure
-plt.figure(figsize=(12, 5))
-
-# --- ROC Curve ---
-plt.subplot(1, 2, 1)
-plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC (AUC = {roc_auc:.3f})')
-plt.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('Receiver Operating Characteristic (ROC) Curve')
-plt.legend(loc='lower right')
-
-# --- Precision–Recall Curve ---
-plt.subplot(1, 2, 2)
-plt.plot(recall, precision, color='green', lw=2, label=f'PR (AUC = {pr_auc:.3f})')
-plt.xlabel('Recall')
-plt.ylabel('Precision')
-plt.title('Precision–Recall Curve')
-plt.legend(loc='lower left')
-
-plt.tight_layout()
-plt.savefig(f"{file_dir}/roc_pr_curves.png", dpi=300, bbox_inches='tight')
-plt.close()
+file_name = "full_model_roc_auc_curve"
+create_ROC_AUC_precision_recall_curves(fpr, tpr, roc_auc, precision, recall, pr_auc, file_dir, file_name)
 
 print(f"ROC AUC: {roc_auc:.3f}")
 print(f"PR AUC: {pr_auc:.3f}")
+
+
