@@ -16,9 +16,12 @@ import warnings
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, auc, precision_recall_curve, average_precision_score
 import time
 import matplotlib.pyplot as plt
+import random
+import os
 import sys
 
 # Filter out warnings
@@ -26,6 +29,12 @@ warnings.filterwarnings("ignore")
 
 # Current time stamp for synchrinization for saved model and model parameters
 curr_time = time.time()
+
+# Set all seeds
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+os.environ['PYTHONHASHSEED'] = str(RANDOM_SEED)
 
 # !!!!!!!!!!!!!!!!!!
 # LOAD DATA
@@ -54,19 +63,25 @@ responder_group = "progression_group_survival_days_252_cutoff"
 predictor_values = ["TFx_C1", "LOH.Score_C1", "TMB_C1"]
 
 # Hyperparameter dictionary
-param_dict = {
-    'eta': [0.1, 0.3],
-    'max_depth': [3, 6],
-    'min_child_weight': [1, 2],
-    'max_delta_step': [0, 1],
-    'subsample': [0.8, 1.0],
-    'colsample_bytree': [0.8, 1.0]
+param_ranges = {
+    'eta': (0.001, 0.3),  # Log scale will be used
+    'max_depth': (3, 10),
+    'min_child_weight': (1, 10),
+    'max_delta_step': (0, 5),
+    'subsample': (0.5, 1.0),
+    'colsample_bytree': (0.5, 1.0),
+    'gamma': (0, 1.0),
+    'lambda': (0.5, 5.0),
+    'alpha': (0, 2.0)
 }
+
+# Number of Bayesian optimization trials per fold
+n_trials = 50  # Adjust based on time constraints
 
 # Model args
 objective = "binary:logistic"
 tree_method = "hist"
-metrics = ["logloss"] # Only supports one metric
+metrics = ["logloss", "auc"] # Only supports one metric
 
 # ********************
 # PROCESS DATA
@@ -109,22 +124,33 @@ ltbx_cohort = combined_dfs[ltbx_cohort_filter]
 mc_train_indices, mc_test_indices = train_test_split(
         mc_cohort.index, 
         test_size=0.25, 
-        random_state=1, 
+        random_state=RANDOM_SEED, 
         stratify=mc_cohort[responder_group]
     )
 
 mc_train = mc_cohort.loc[mc_train_indices]
 mc_test = mc_cohort.loc[mc_test_indices]
 
-# Normalize
-mc_train_norm = standard_scaling(mc_train, responder_group, axis=1)
-mc_test_norm = standard_scaling(mc_test, responder_group, axis=1)
-ltbx_norm = standard_scaling(ltbx_cohort, responder_group, axis=1)
+# Save responder groups before normalizing
+y_train_mc = mc_train[[responder_group]].copy()
+y_test_mc = mc_test[[responder_group]].copy()
+y_ltbx = ltbx_cohort[[responder_group]].copy()
 
-# Extract features and target arrays
-X_train_mc, y_train_mc = mc_train_norm.drop(columns = responder_group, axis = 1), mc_train_norm[[responder_group]]
-X_test_mc, y_test_mc = mc_test_norm.drop(columns = responder_group, axis = 1), mc_test_norm[[responder_group]]
-X_ltbx, y_ltbx = ltbx_norm.drop(columns = responder_group, axis = 1), ltbx_norm[[responder_group]]
+# Drop responder column 
+X_train_mc_df = mc_train.drop(columns=responder_group)
+X_test_mc_df = mc_test.drop(columns=responder_group)
+X_ltbx_df = ltbx_cohort.drop(columns=responder_group)
+
+# Normalize
+scaler = StandardScaler()
+X_train_mc = scaler.fit_transform(X_train_mc_df)
+X_test_mc = scaler.transform(X_test_mc_df)
+X_ltbx = scaler.transform(X_ltbx_df)
+
+# Convert back to dataframe
+X_train_mc = pd.DataFrame(X_train_mc, columns=X_train_mc_df.columns, index=X_train_mc_df.index)
+X_test_mc = pd.DataFrame(X_test_mc, columns=X_test_mc_df.columns, index=X_test_mc_df.index)
+X_ltbx = pd.DataFrame(X_ltbx, columns=X_ltbx_df.columns, index=X_ltbx_df.index)
 
 # Encode responder groups as 0/1
 encoder = OrdinalEncoder(categories=[["non-responder", "responder"]])
@@ -152,10 +178,10 @@ print()
 # *******************
 
 # Train model with nested 5 fold cross validation
-cv_results, file_dir = nested_five_fold_cv(
+cv_results, file_dir = nested_five_fold_cv_bayesian(
     X_train_mc, 
     y_train_mc_encoded,
-    param_dict,
+    param_ranges,
     objective,
     tree_method,
     800, # Number of boosts
@@ -164,6 +190,8 @@ cv_results, file_dir = nested_five_fold_cv(
     0, # Outputs model's performance every number boosts
     30, # Stops model if performance doesn't increase after number of boosts
     curr_time, # For saving model parameters
+    n_trials=n_trials,
+    random_state=RANDOM_SEED, 
 )
 
 # Print out results
@@ -174,6 +202,9 @@ print()
 median_params, best_boost_round = get_median_params(cv_results)
 
 print(f"median_params: \n{median_params}\n")
+
+# Fix seed type
+median_params["seed"] = int(median_params["seed"])
 
 dtrain_mc_train = xgb.DMatrix(X_train_mc, label = y_train_mc_encoded, enable_categorical = True)
 print(f"dtrain_clf: \n{dtrain_mc_train}")
@@ -263,7 +294,8 @@ full_model = xgb.train(
         **median_params,
         'objective': objective,
         'eval_metric': metrics[0],
-        'tree_method': tree_method
+        'tree_method': tree_method,
+        'seed': RANDOM_SEED
     },
 )
 
