@@ -7,7 +7,7 @@
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score, average_precision_score, log_loss
 from sklearn.model_selection import StratifiedKFold
 import time
 from sklearn.model_selection import StratifiedKFold
@@ -60,7 +60,8 @@ def five_fold_cv(training_matrix, params, boost_rounds, nfold, metrics, verbose_
     return cv_results
 
 def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boost_rounds, nfold, metrics, 
-                                  verbose_eval, early_stopping, curr_time, n_trials=100, random_state=42):
+                                  verbose_eval, early_stopping, curr_time, n_trials=100, random_state=42,
+                                  primary_metric=None):
     '''
     Parameters:
     -----------
@@ -106,6 +107,15 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
         file_dir:
             Timestamped file directory to save parameters and completed model.
     '''
+    # Set pimary metric for optimization
+    if primary_metric is None:
+        primary_metric = metrics[0]
+
+    maximize_metrics = ["auc", "aucpr", "map"]
+    if primary_metric in maximize_metrics:
+        optimization_direction = "maximize"
+    else :
+        optimization_direction = "minimize"
 
     # Make sure X and y are pandas objs
     if isinstance(X, np.ndarray):
@@ -122,18 +132,18 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
     outer_cv = StratifiedKFold(n_splits = 5, shuffle = True, random_state = random_state)
     outer_results = []
     fold_num = 1
-
+    
     for train_idx, test_idx in outer_cv.split(X, y):
         print(f"\n=== Outer Fold {fold_num} ===")
 
         # Split outer fold
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
+        
         # Flatten y from 2D column vector to 1D array
         y_train = y_train.values.ravel()
         y_test = y_test.values.ravel()
-
+        
         # Set up DMatrixes 
         dtrain = xgb.DMatrix(X_train, label = y_train, enable_categorical = True)
         dtest = xgb.DMatrix(X_test, label = y_test, enable_categorical = True)
@@ -152,22 +162,32 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
                 'lambda': trial.suggest_float('lambda', param_ranges['lambda'][0], param_ranges['lambda'][1]),
                 'alpha': trial.suggest_float('alpha', param_ranges['alpha'][0], param_ranges['alpha'][1]),
                 'objective': objective,
-                'eval_metric': metrics[0],
+                'eval_metric': metrics,
                 'tree_method': tree_method
             }
+
+            # Suggest which metric to optimize for early stopping
+            suggested_metric = trial.suggest_categorical('optimization_metric', metrics)
             
             if objective == "multi:softprob":
                 params['num_class'] = len(np.unique(y))
 
             # Run 5-fold CV
             cv_results = five_fold_cv(dtrain, params, boost_rounds, nfold, metrics, verbose_eval, early_stopping, random_state)
+
+            # Find best round based on suggested metric
+            if suggested_metric in maximize_metrics:
+                best_round_for_metric = cv_results[f'test-{suggested_metric}-mean'].idxmax()
+            else:
+                best_round_for_metric = cv_results[f'test-{suggested_metric}-mean'].idxmin()
             
-            # Return best score (minimize logloss or maximize auc)
-            return cv_results[f'test-{metrics[0]}-mean'].min()
+            # Return best score based on main model metric
+            best_main_model_metric_round = cv_results.loc[best_round_for_metric, f'test-{metrics[0]}-mean']
+            return best_main_model_metric_round
 
         # Create Optuna study
         study = optuna.create_study(
-            direction='minimize',  # Minimize logloss (change to 'maximize' for AUC)
+            direction=optimization_direction,
             sampler=optuna.samplers.TPESampler(seed=random_state)
         )
         
@@ -177,8 +197,9 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
         
         # Get best parameters
         best_params = study.best_params.copy()
+        best_optimization_metric = best_params.pop("optimization_metric")
         best_params['objective'] = objective
-        best_params['eval_metric'] = metrics[0]
+        best_params['eval_metric'] = metrics
         best_params['tree_method'] = tree_method
         best_params['seed'] = random_state
         if objective == "multi:softprob":
@@ -191,8 +212,16 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
         
         # Get best number of rounds by running CV one more time with best params
         cv_results = five_fold_cv(dtrain, best_params, boost_rounds, nfold, metrics, verbose_eval, early_stopping, random_state)
-        best_round = cv_results[f'test-{metrics[0]}-mean'].idxmin() + 1
-        print(f"Best round: {best_round}")
+        
+        # Find best round based on metric chosen by Bayesian optimization
+        if best_optimization_metric in maximize_metrics:
+            best_round = cv_results[f'test-{best_optimization_metric}-mean'].idxmax() + 1
+        else:
+            best_round = cv_results[f'test-{best_optimization_metric}-mean'].idxmin() + 1
+
+        inner_metric_scores = {}
+        for metric in metrics:
+            inner_metric_scores[metric] = cv_results.loc[best_round - 1, f'test-{metric}-mean']
 
         # Train on full training fold
         model = xgb.train(
@@ -209,14 +238,32 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
         else:
             y_pred = (y_pred_prob > 0.5).astype(int)
 
+        # Calculate outer fold metrics
         accuracy = accuracy_score(y_test, y_pred)
-        print(f"Accuracy (outer fold {fold_num}): {accuracy:.4f}")
+        outer_metric_scores = {"accuracy": accuracy}
+
+        if 'logloss' in metrics:
+            outer_metric_scores['logloss'] = log_loss(y_test, y_pred_prob)
+
+        # For binary classification, calculate AUC
+        if objective != "multi:softprob":
+            if 'auc' in metrics:
+                outer_metric_scores['auc'] = roc_auc_score(y_test, y_pred_prob)
+            if 'aucpr' in metrics:
+                outer_metric_scores['aucpr'] = average_precision_score(y_test, y_pred_prob)  
+        else:
+            if 'logloss' not in outer_metric_scores:
+                outer_metric_scores['logloss'] = log_loss(y_test, y_pred_prob)
+                  
 
         outer_results.append({
             'fold': fold_num,
             'best_params': best_params,
+            'best_optimization_metric': best_optimization_metric,
             'best_round': best_round,
-            'inner_best_score': best_score,
+            'inner_metric_scores': inner_metric_scores,
+            'inner_best_auc': best_score,
+            'outer_metric_scores': outer_metric_scores,
             'accuracy': accuracy,
             'class_report': classification_report(y_test, y_pred, output_dict = True),
             'confusion_matrix': confusion_matrix(y_test, y_pred),
@@ -229,6 +276,16 @@ def nested_five_fold_cv_bayesian(X, y, param_ranges, objective, tree_method, boo
     mean_accuracy = np.mean([r['accuracy'] for r in outer_results])
     print(f"Mean Accuracy: {mean_accuracy:.4f}")
     print(f"Std Accuracy: {np.std([r['accuracy'] for r in outer_results]):.4f}")
+
+    print("\n=== Metric Summary (outer folds) ===")
+    all_outer_metrics = set()
+    for r in outer_results:
+        all_outer_metrics.update(r['outer_metric_scores'].keys())
+
+    for metric in sorted(all_outer_metrics):
+        scores = [r['outer_metric_scores'].get(metric) for r in outer_results if metric in r['outer_metric_scores']]
+        if scores:
+            print(f"Mean {metric}: {np.mean(scores):.4f} (+/- {np.std(scores):.4f})")
 
     # Create directory 
     file_dir = os.path.join("..", "saved-models", f"{curr_time}_model_accuracy_{mean_accuracy:.4f}")

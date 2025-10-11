@@ -248,12 +248,14 @@ def get_median_params(cv_results):
             Median best boost round
     """
     param_df = pd.DataFrame([r["best_params"] for r in cv_results])
+
+    print(f"param_df: \n{param_df}\n")
     
     # Get median for numeric parameters only
     median_params = param_df.select_dtypes(include=[np.number]).median().to_dict()
     
     # Convert specific parameters to integers
-    int_cols = ["max_depth", "max_delta_step"]
+    int_cols = ["max_depth", "max_delta_step", "seed"]
     for c in int_cols:
         if c in median_params:
             median_params[c] = int(round(median_params[c]))

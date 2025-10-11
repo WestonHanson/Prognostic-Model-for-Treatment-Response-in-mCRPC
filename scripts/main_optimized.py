@@ -81,7 +81,7 @@ n_trials = 50  # Adjust based on time constraints
 # Model args
 objective = "binary:logistic"
 tree_method = "hist"
-metrics = ["logloss", "auc"] # Only supports one metric
+metrics = ['auc', 'logloss', 'error',  'aucpr']
 
 # ********************
 # PROCESS DATA
@@ -97,6 +97,8 @@ else:
 print(f"genomic_data: \n{genomic_data}")
 print()
 
+
+
 # Remove patients at C2 and with less than 10% TFx
 genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, "C2", tfx_cutoff)
 print(f"genomic_data: \n{genomic_data}")
@@ -106,6 +108,7 @@ print()
 
 FGA_column_filtered = extract_FGA(FGA_data, "C1")
 print(f"FGA_column_filtered: \n{FGA_column_filtered}")
+print(f"length: \n{len(FGA_column_filtered)}")
 print()
 
 # Append responder group to predictor_value and Combine dataframes
@@ -120,6 +123,15 @@ ltbx_cohort_filter = combined_dfs.index.str.contains("FHL")
 mc_cohort = combined_dfs[~ltbx_cohort_filter]
 ltbx_cohort = combined_dfs[ltbx_cohort_filter]
 
+# For reproducibility
+mc_cohort = mc_cohort.sort_index()
+ltbx_cohort = ltbx_cohort.sort_index()
+
+print(f"mc_cohort: \n{mc_cohort}\n")
+print(f"ltbx_cohort: \n{ltbx_cohort}\n")
+
+print(f"mc_cohort.index: \n{mc_cohort.index}\n")
+
 # Split the data (Automatically splits into 25:75, stratify keeps the same proporition of 0/1 in testing and training data)
 mc_train_indices, mc_test_indices = train_test_split(
         mc_cohort.index, 
@@ -127,36 +139,59 @@ mc_train_indices, mc_test_indices = train_test_split(
         random_state=RANDOM_SEED, 
         stratify=mc_cohort[responder_group]
     )
+print(f"mc_train_indices: \n{mc_train_indices}\n")
+print(f"mc_train_indices proportion: \n{(len(mc_train_indices))/(len(mc_train_indices)+len(mc_test_indices))}\n")
+print(f"mc_train_indices: \n{mc_test_indices}\n")
+print(f"mc_test_indices proportion: \n{(len(mc_test_indices))/(len(mc_train_indices)+len(mc_test_indices))}\n")
 
 mc_train = mc_cohort.loc[mc_train_indices]
 mc_test = mc_cohort.loc[mc_test_indices]
+print(f"mc_train: \n{mc_train}\n")
+print(f"mc_test: \n{mc_test}\n")
 
 # Save responder groups before normalizing
 y_train_mc = mc_train[[responder_group]].copy()
 y_test_mc = mc_test[[responder_group]].copy()
 y_ltbx = ltbx_cohort[[responder_group]].copy()
+print(f"y_train_mc: \n{y_train_mc}\n")
+print(f"y_test_mc: \n{y_test_mc}\n")
+print(f"y_ltbx: \n{y_ltbx}\n")
 
 # Drop responder column 
 X_train_mc_df = mc_train.drop(columns=responder_group)
 X_test_mc_df = mc_test.drop(columns=responder_group)
 X_ltbx_df = ltbx_cohort.drop(columns=responder_group)
+print(f"X_train_mc_df: \n{X_train_mc_df.index}\n")
+print(f"X_test_mc_df: \n{X_test_mc_df.index}\n")
+print(f"X_ltbx_df: \n{X_ltbx_df.index}\n")
 
-# Normalize
+# Normalize along the features axis 
 scaler = StandardScaler()
 X_train_mc = scaler.fit_transform(X_train_mc_df)
 X_test_mc = scaler.transform(X_test_mc_df)
 X_ltbx = scaler.transform(X_ltbx_df)
+print(f"X_train_mc: \n{X_train_mc}\n")
+print(f"X_test_mc: \n{X_test_mc}\n")
+print(f"X_ltbx: \n{X_ltbx}\n")
 
 # Convert back to dataframe
 X_train_mc = pd.DataFrame(X_train_mc, columns=X_train_mc_df.columns, index=X_train_mc_df.index)
 X_test_mc = pd.DataFrame(X_test_mc, columns=X_test_mc_df.columns, index=X_test_mc_df.index)
 X_ltbx = pd.DataFrame(X_ltbx, columns=X_ltbx_df.columns, index=X_ltbx_df.index)
+print(f"X_train_mc: \n{X_train_mc}\n")
+print(f"X_test_mc: \n{X_test_mc}\n")
+print(f"X_ltbx: \n{X_ltbx}\n")
 
 # Encode responder groups as 0/1
 encoder = OrdinalEncoder(categories=[["non-responder", "responder"]])
 y_train_mc_encoded = encoder.fit_transform(y_train_mc)
 y_test_mc_encoded = encoder.transform(y_test_mc)
 y_ltbx_encoded = encoder.transform(y_ltbx)
+print(f"y_train_mc_encoded: \n{y_train_mc_encoded}\n")
+print(f"y_test_mc_encoded: \n{y_test_mc_encoded}\n")
+print(f"y_ltbx_encoded: \n{y_ltbx_encoded}\n")
+
+
 
 X_train_mc, X_test_mc, X_ltbx = prepare_categorical_features(X_train_mc), prepare_categorical_features(X_test_mc), prepare_categorical_features(X_ltbx)
 
@@ -191,7 +226,7 @@ cv_results, file_dir = nested_five_fold_cv_bayesian(
     30, # Stops model if performance doesn't increase after number of boosts
     curr_time, # For saving model parameters
     n_trials=n_trials,
-    random_state=RANDOM_SEED, 
+    random_state=RANDOM_SEED,
 )
 
 # Print out results
@@ -203,9 +238,6 @@ median_params, best_boost_round = get_median_params(cv_results)
 
 print(f"median_params: \n{median_params}\n")
 
-# Fix seed type
-median_params["seed"] = int(median_params["seed"])
-
 dtrain_mc_train = xgb.DMatrix(X_train_mc, label = y_train_mc_encoded, enable_categorical = True)
 print(f"dtrain_clf: \n{dtrain_mc_train}")
 
@@ -215,9 +247,6 @@ model = xgb.train(
     num_boost_round = best_boost_round,
     params = {
         **median_params,
-        'objective': objective,
-        'eval_metric': metrics[0],
-        'tree_method': tree_method
     },
 )
 
@@ -274,14 +303,22 @@ create_ROC_AUC_precision_recall_curves(fpr, tpr, roc_auc, precision, recall, pr_
 # ******************************
 
 # Normalize whole cohort at once
-mc_cohort_norm = standard_scaling(mc_cohort, responder_group, 0)
+# mc_cohort_norm = standard_scaling(mc_cohort, responder_group, 0)
+y_mc_full = mc_cohort[[responder_group]].copy()
+
+# Drop responder column 
+X_mc_full_df = y_mc_full.drop(columns=responder_group)
+
+mc_cohort_norm = scaler.fit_transform(X_mc_full_df)
+
+# Convert back to dataframe
+X_mc_full_df = pd.DataFrame(mc_cohort_norm, columns=mc_cohort_norm.columns, index=mc_cohort_norm.index)
 
 # Split data for training
-X_mc_full, y_mc_full = mc_cohort_norm.drop(columns=responder_group, axis=1), mc_cohort_norm[[responder_group]]
 y_mc_full_encoded = encoder.fit_transform(y_mc_full)
 
 # Prepare categorical features
-X_mc_full = prepare_categorical_features(X_mc_full)
+X_mc_full = prepare_categorical_features(X_mc_full_df)
 
 dtest_mc_full = xgb.DMatrix(X_mc_full, label=y_mc_full_encoded, enable_categorical=True)
 print(f"full_dtest_mc_cohort: \n{dtest_mc_full}")
@@ -292,10 +329,6 @@ full_model = xgb.train(
     num_boost_round = best_boost_round,
     params = {
         **median_params,
-        'objective': objective,
-        'eval_metric': metrics[0],
-        'tree_method': tree_method,
-        'seed': RANDOM_SEED
     },
 )
 
