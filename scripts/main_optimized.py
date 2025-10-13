@@ -57,8 +57,12 @@ FGA_data = pd.read_table(FGA_data_file, sep="\t", index_col=0)
 genomic_choice = "tfbs"
 
 tfx_cutoff = 0.03
+# progression_group_survival_days_252_cutoff	progression_group_survival_days_median	progression_group_survival_days_quartile	
+# progression_group_PSA_prog_days_median	progression_group_PSA_prog_days_quartile	progression_group_PSA_Progression	
+# progression_group_tfx_prog_days_median	progression_group_tfx_prog_days_quartile	progression_group_T_cycles_1_vs_6	
+# progression_group_T_cycles_2_vs_6	progression_group_T_cycles_1_2_vs_5_6	progression_group_T_cycles_1-5_vs_6
 
-responder_group = "progression_group_survival_days_252_cutoff"
+responder_group = "progression_group_T_cycles_1_vs_6"
 
 predictor_values = ["TFx_C1", "LOH.Score_C1", "TMB_C1"]
 
@@ -97,10 +101,11 @@ else:
 print(f"genomic_data: \n{genomic_data}")
 print()
 
-
+# Combine responder_group and predictor_values
+predictor_values.append(responder_group)
 
 # Remove patients at C2 and with less than 10% TFx
-genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, "C2", tfx_cutoff)
+genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, predictor_values, "C2", tfx_cutoff)
 print(f"genomic_data: \n{genomic_data}")
 print()
 print(f"pluvicto_master_sheet: \n{pluvicto_master_sheet}")
@@ -112,7 +117,6 @@ print(f"length: \n{len(FGA_column_filtered)}")
 print()
 
 # Append responder group to predictor_value and Combine dataframes
-predictor_values.append(responder_group)
 combined_dfs = combine_dataframes(genomic_data, pluvicto_master_sheet, FGA_data, predictor_values)
 
 print(f"combined_dfs: \n{combined_dfs}")
@@ -153,7 +157,7 @@ print(f"mc_test: \n{mc_test}\n")
 y_train_mc = mc_train[[responder_group]].copy()
 y_test_mc = mc_test[[responder_group]].copy()
 y_ltbx = ltbx_cohort[[responder_group]].copy()
-print(f"y_train_mc: \n{y_train_mc}\n")
+print(f"y_train_mc: \n{type(y_train_mc)}\n")
 print(f"y_test_mc: \n{y_test_mc}\n")
 print(f"y_ltbx: \n{y_ltbx}\n")
 
@@ -191,8 +195,6 @@ print(f"y_train_mc_encoded: \n{y_train_mc_encoded}\n")
 print(f"y_test_mc_encoded: \n{y_test_mc_encoded}\n")
 print(f"y_ltbx_encoded: \n{y_ltbx_encoded}\n")
 
-
-
 X_train_mc, X_test_mc, X_ltbx = prepare_categorical_features(X_train_mc), prepare_categorical_features(X_test_mc), prepare_categorical_features(X_ltbx)
 
 print(f"X_train_mc: \n{X_train_mc}")
@@ -208,13 +210,20 @@ print()
 print(f"y_ltbx_encoded: \n{y_ltbx_encoded}")
 print()
 
+print(f"X_train_mc: \n{X_train_mc.isna().any().any()}")
+print(f"X_test_mc: \n{X_test_mc.isna().any().any()}")
+print(f"y_train_mc_encoded: \n{np.isnan(y_train_mc_encoded)}")
+print(f"y_test_mc_encoded: \n{np.isnan(y_test_mc_encoded)}")
+print(f"X_ltbx: \n{X_ltbx.isna().any().any()}")
+print(f"y_ltbx_encoded: \n{np.isnan(y_ltbx_encoded)}")
+
 # *******************
 # TRAIN MODEL
 # *******************
 
 # Train model with nested 5 fold cross validation
 cv_results, file_dir = nested_five_fold_cv_bayesian(
-    X_train_mc, 
+    X_train_mc,
     y_train_mc_encoded,
     param_ranges,
     objective,
@@ -303,16 +312,19 @@ create_ROC_AUC_precision_recall_curves(fpr, tpr, roc_auc, precision, recall, pr_
 # ******************************
 
 # Normalize whole cohort at once
-# mc_cohort_norm = standard_scaling(mc_cohort, responder_group, 0)
 y_mc_full = mc_cohort[[responder_group]].copy()
 
 # Drop responder column 
-X_mc_full_df = y_mc_full.drop(columns=responder_group)
+X_mc_full_df = mc_cohort.drop(columns=responder_group)
+
+# Save columns and indexs before scaling
+X_mc_full_df_columns = X_mc_full_df.columns
+X_mc_full_df_index = X_mc_full_df.index
 
 mc_cohort_norm = scaler.fit_transform(X_mc_full_df)
 
 # Convert back to dataframe
-X_mc_full_df = pd.DataFrame(mc_cohort_norm, columns=mc_cohort_norm.columns, index=mc_cohort_norm.index)
+X_mc_full_df = pd.DataFrame(mc_cohort_norm, columns=X_mc_full_df_columns, index=X_mc_full_df_index)
 
 # Split data for training
 y_mc_full_encoded = encoder.fit_transform(y_mc_full)
@@ -361,6 +373,7 @@ else:
     y_pred = (y_predicted_prob > 0.5).astype(int)
 
 print(f"y_pred: {y_pred}\n")
+print(f"y_true: {y_ltbx_encoded}\n")
 
 # Evaluate accuracy of model
 accuracy = accuracy_score(y_ltbx_encoded, y_pred)

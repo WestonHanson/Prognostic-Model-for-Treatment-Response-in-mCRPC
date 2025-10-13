@@ -85,7 +85,7 @@ def standard_scaling(df, responder_group, axis=0):
 
     return normalized_df
 
-def clean_patient_names(genomic_data, pluvicto_master_sheet, timepoint, cutoff):
+def clean_patient_names(genomic_data, pluvicto_master_sheet, predictor_values, timepoint, cutoff):
     '''
     Parameters:
     -----------
@@ -119,7 +119,7 @@ def clean_patient_names(genomic_data, pluvicto_master_sheet, timepoint, cutoff):
     pluvicto_master_sheet = pluvicto_master_sheet[pluvicto_master_sheet['TFx_C1'] >= cutoff]
     
     # Remove any patients that have TFx NA
-    pluvicto_master_sheet = pluvicto_master_sheet.dropna(subset=['TFx_C1', 'LOH.Score_C1', 'TMB_C1'])
+    pluvicto_master_sheet = pluvicto_master_sheet.dropna(subset=predictor_values)
 
     # Remove patients based on timepoint
     column_names_to_remove = [col for col in genomic_data.columns if timepoint in col]
