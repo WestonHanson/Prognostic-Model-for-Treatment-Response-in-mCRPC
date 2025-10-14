@@ -79,6 +79,13 @@ param_ranges = {
     'alpha': (0, 2.0)
 }
 
+# Number of boosts
+num_of_boosts = 800
+# Number of folds
+num_of_folds = 5
+# Stops model if performance doesn't increase after number of boosts
+num_of_early_stopping = 30 
+
 # Number of Bayesian optimization trials per fold
 n_trials = 50  # Adjust based on time constraints
 
@@ -161,29 +168,13 @@ print(f"y_train_mc: \n{type(y_train_mc)}\n")
 print(f"y_test_mc: \n{y_test_mc}\n")
 print(f"y_ltbx: \n{y_ltbx}\n")
 
-# Save columns that are already on a 0-1 scale
-save_columns = [c for c in predictor_values if c not in [responder_group, "TMB_C1"]]
-save_columns.append("genomic_instability")
-print(save_columns)
-
-print(mc_train.columns)
-
-mc_train_extra_columns_to_save = mc_train[save_columns].copy()
-mc_test_extra_columns_to_save = mc_test[save_columns].copy()
-ltbx_cohort_extra_columns_to_save = ltbx_cohort[save_columns].copy()
-print(f"mc_train_extra_columns_to_save: \n{mc_train_extra_columns_to_save}\n")
-print(f"mc_test_extra_columns_to_save: \n{mc_test_extra_columns_to_save}\n")
-print(f"ltbx_cohort_extra_columns_to_save: \n{ltbx_cohort_extra_columns_to_save}\n")
-
-
-# Drop responder and saved columns
-columns_to_drop = save_columns + [responder_group]
-X_train_mc_df = mc_train.drop(columns=columns_to_drop)
-X_test_mc_df = mc_test.drop(columns=columns_to_drop)
-X_ltbx_df = ltbx_cohort.drop(columns=columns_to_drop)
-print(f"X_train_mc_df: \n{X_train_mc_df}\n")
-print(f"X_test_mc_df: \n{X_test_mc_df}\n")
-print(f"X_ltbx_df: \n{X_ltbx_df}\n")
+# Drop responder column 
+X_train_mc_df = mc_train.drop(columns=responder_group)
+X_test_mc_df = mc_test.drop(columns=responder_group)
+X_ltbx_df = ltbx_cohort.drop(columns=responder_group)
+print(f"X_train_mc_df: \n{X_train_mc_df.index}\n")
+print(f"X_test_mc_df: \n{X_test_mc_df.index}\n")
+print(f"X_ltbx_df: \n{X_ltbx_df.index}\n")
 
 # Normalize along the features axis 
 scaler = StandardScaler()
@@ -198,14 +189,6 @@ print(f"X_ltbx: \n{X_ltbx}\n")
 X_train_mc = pd.DataFrame(X_train_mc, columns=X_train_mc_df.columns, index=X_train_mc_df.index)
 X_test_mc = pd.DataFrame(X_test_mc, columns=X_test_mc_df.columns, index=X_test_mc_df.index)
 X_ltbx = pd.DataFrame(X_ltbx, columns=X_ltbx_df.columns, index=X_ltbx_df.index)
-print(f"X_train_mc: \n{X_train_mc.shape}\n")
-print(f"X_test_mc: \n{X_test_mc.shape}\n")
-print(f"X_ltbx: \n{X_ltbx.shape}\n")
-
-# Merge extra saved columns
-X_train_mc = pd.merge(X_train_mc, mc_train_extra_columns_to_save, left_index=True, right_index=True, how='inner')
-X_test_mc = pd.merge(X_test_mc, mc_test_extra_columns_to_save, left_index=True, right_index=True, how='inner')
-X_ltbx = pd.merge(X_ltbx, ltbx_cohort_extra_columns_to_save, left_index=True, right_index=True, how='inner')
 print(f"X_train_mc: \n{X_train_mc}\n")
 print(f"X_test_mc: \n{X_test_mc}\n")
 print(f"X_ltbx: \n{X_ltbx}\n")
@@ -234,11 +217,12 @@ print()
 print(f"y_ltbx_encoded: \n{y_ltbx_encoded}")
 print()
 
-if X_train_mc.columns.equals(X_test_mc.columns) and X_test_mc.columns.equals(X_ltbx.columns):
-    print("Same")
-else:
-    print("different")
-
+print(f"X_train_mc: \n{X_train_mc.isna().any().any()}")
+print(f"X_test_mc: \n{X_test_mc.isna().any().any()}")
+print(f"y_train_mc_encoded: \n{np.isnan(y_train_mc_encoded)}")
+print(f"y_test_mc_encoded: \n{np.isnan(y_test_mc_encoded)}")
+print(f"X_ltbx: \n{X_ltbx.isna().any().any()}")
+print(f"y_ltbx_encoded: \n{np.isnan(y_ltbx_encoded)}")
 
 # *******************
 # TRAIN MODEL
@@ -251,11 +235,11 @@ cv_results, file_dir = nested_five_fold_cv_bayesian(
     param_ranges,
     objective,
     tree_method,
-    800, # Number of boosts
-    5, # Number of folds
+    num_of_boosts, # Number of boosts
+    num_of_folds, # Number of folds
     metrics,
     0, # Outputs model's performance every number boosts
-    30, # Stops model if performance doesn't increase after number of boosts
+    num_of_early_stopping, # Stops model if performance doesn't increase after number of boosts
     curr_time, # For saving model parameters
     n_trials=n_trials,
     random_state=RANDOM_SEED,
@@ -269,9 +253,11 @@ print()
 median_params, best_boost_round = get_median_params(cv_results)
 
 print(f"median_params: \n{median_params}\n")
+print(f"best_boost_round: \n{best_boost_round}\n")
 
 dtrain_mc_train = xgb.DMatrix(X_train_mc, label = y_train_mc_encoded, enable_categorical = True)
 print(f"dtrain_clf: \n{dtrain_mc_train}")
+
 
 # Train model
 model = xgb.train(
@@ -292,6 +278,167 @@ print("saved model")
 # Plot feature importance
 feature_importance = model.get_score(importance_type='gain')
 print(f"feature_importance: {feature_importance}")
+
+
+# ****************
+# Debugging
+# ****************
+
+print("\n" + "="*80)
+print("DEEP MODEL DEBUGGING")
+print("="*80)
+
+# 1. Check what the CV actually returned
+print("\n1. CROSS-VALIDATION RESULTS:")
+print("-" * 60)
+for i, result in enumerate(cv_results):
+    print(f"\nFold {i+1}:")
+    print(f"  Best params: {result['best_params']}")
+    print(f"  Best round: {result['best_round']}")
+    print(f"  Accuracy: {result['accuracy']:.4f}")
+    print(f"  Confusion matrix:\n{result['confusion_matrix']}")
+    
+    # Check if CV fold is also predicting all 1's
+    cm = result['confusion_matrix']
+    if cm.shape[0] == 2 and cm.shape[1] == 2:
+        total_pred_0 = cm[0, 0] + cm[1, 0]  # All predictions of class 0
+        total_pred_1 = cm[0, 1] + cm[1, 1]  # All predictions of class 1
+        print(f"  Predictions: Class 0={total_pred_0}, Class 1={total_pred_1}")
+        if total_pred_0 == 0:
+            print("  ⚠️  WARNING: This fold also predicted all 1's!")
+
+# 2. Check median parameters
+print("\n2. MEDIAN PARAMETERS:")
+print("-" * 60)
+print(f"median_params: {median_params}")
+print(f"best_boost_round: {best_boost_round}")
+
+# Check if parameters are too restrictive
+if 'max_depth' in median_params and median_params['max_depth'] <= 2:
+    print("⚠️  WARNING: max_depth is very low, model may be too simple")
+if 'min_child_weight' in median_params and median_params['min_child_weight'] >= 10:
+    print("⚠️  WARNING: min_child_weight is very high, model may be too constrained")
+
+# 3. Test the trained model on TRAINING data
+print("\n3. MODEL PERFORMANCE ON TRAINING DATA:")
+print("-" * 60)
+train_pred_prob = model.predict(dtrain_mc_train)
+train_pred = (train_pred_prob > 0.5).astype(int)
+
+print(f"Training set size: {len(y_train_mc_encoded)}")
+print(f"Probability stats:")
+print(f"  Min: {train_pred_prob.min():.4f}")
+print(f"  Max: {train_pred_prob.max():.4f}")
+print(f"  Mean: {train_pred_prob.mean():.4f}")
+print(f"  Std: {train_pred_prob.std():.4f}")
+
+train_actual = y_train_mc_encoded.ravel().astype(int)
+print(f"\nActual distribution: {np.bincount(train_actual)}")
+print(f"Predicted distribution: {np.bincount(train_pred)}")
+
+train_acc = accuracy_score(train_actual, train_pred)
+print(f"Training accuracy: {train_acc:.4f}")
+
+if train_acc < 0.6:
+    print("⚠️  WARNING: Low training accuracy - model is not learning!")
+
+# Show some individual predictions
+print("\nFirst 20 training predictions:")
+print("Index | Actual | Prob   | Pred | Match")
+print("-" * 50)
+for i in range(min(20, len(train_actual))):
+    actual = train_actual[i]
+    prob = train_pred_prob[i]
+    pred = train_pred[i]
+    match = "✓" if actual == pred else "✗"
+    print(f"{i:5d} | {actual:6d} | {prob:.4f} | {pred:4d} | {match:^5s}")
+
+# 4. Check if model has actually learned anything
+print("\n4. MODEL STRUCTURE CHECK:")
+print("-" * 60)
+
+# Get model dump
+model_dump = model.get_dump()
+num_trees = len(model_dump)
+print(f"Number of trees in model: {num_trees}")
+
+if num_trees == 0:
+    print("⚠️  CRITICAL ERROR: Model has no trees!")
+elif num_trees < 10:
+    print(f"⚠️  WARNING: Very few trees ({num_trees}), model may be undertrained")
+
+# Check first tree
+if num_trees > 0:
+    first_tree = model_dump[0]
+    print(f"\nFirst tree structure (truncated):")
+    print(first_tree[:500] if len(first_tree) > 500 else first_tree)
+
+# 5. Get feature importance
+print("\n5. FEATURE IMPORTANCE:")
+print("-" * 60)
+try:
+    feature_importance = model.get_score(importance_type='gain')
+    if len(feature_importance) == 0:
+        print("⚠️  WARNING: No feature importance scores!")
+    else:
+        sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        print(f"Top 10 features by gain:")
+        for feat, score in sorted_features[:10]:
+            # Map feature index back to name if possible
+            if feat.startswith('f') and feat[1:].isdigit():
+                feat_idx = int(feat[1:])
+                if feat_idx < len(X_train_mc.columns):
+                    feat_name = X_train_mc.columns[feat_idx]
+                    print(f"  {feat_name} ({feat}): {score:.4f}")
+                else:
+                    print(f"  {feat}: {score:.4f}")
+            else:
+                print(f"  {feat}: {score:.4f}")
+except Exception as e:
+    print(f"⚠️  Error getting feature importance: {e}")
+
+# 6. Manual prediction test
+print("\n6. MANUAL PREDICTION TEST:")
+print("-" * 60)
+print("Testing with just the first test sample...")
+
+# Get first test sample
+first_test_sample = X_test_mc.iloc[[0]]
+first_test_label = y_test_mc_encoded[0]
+
+print(f"Actual label: {first_test_label}")
+print(f"Feature values (first 10):")
+for col in first_test_sample.columns[:10]:
+    print(f"  {col}: {first_test_sample[col].values[0]:.4f}")
+
+dtest_single = xgb.DMatrix(first_test_sample, enable_categorical=True)
+single_pred_prob = model.predict(dtest_single)
+single_pred = (single_pred_prob > 0.5).astype(int)
+
+print(f"\nPredicted probability: {single_pred_prob[0]:.4f}")
+print(f"Predicted class: {single_pred[0]}")
+
+# 7. Check for leaf values
+print("\n7. LEAF VALUE ANALYSIS:")
+print("-" * 60)
+# Get leaf predictions for training data to see if they're all similar
+train_leaves = model.predict(dtrain_mc_train, pred_leaf=True)
+print(f"Shape of leaf predictions: {train_leaves.shape}")
+print(f"Unique leaf patterns in first tree: {len(np.unique(train_leaves[:, 0]))}")
+
+if train_leaves.shape[1] > 0:
+    # Check if all samples land in the same leaf
+    unique_patterns = len(np.unique(train_leaves, axis=0))
+    print(f"Total unique leaf patterns across all trees: {unique_patterns}")
+    if unique_patterns <= 2:
+        print("⚠️  WARNING: Very few unique leaf patterns - model is too simple!")
+
+print("\n" + "="*80)
+print("END DEEP DEBUGGING")
+print("="*80 + "\n")
+
+# ************************
+
 
 # ****************************************************
 # TEST AND EVALUATE MODEL ON 1ST COHORT (HOLD OUT SET)
@@ -381,11 +528,6 @@ print(f"feature_importance: {feature_importance}")
 # *************************************
 # TEST AND EVALUATE MODEL ON 2ND COHORT
 # *************************************
-
-# Reset order of X_ltbx columns
-print(f"X_ltbx_columns_before: {X_ltbx.columns}")
-X_ltbx = X_ltbx[X_mc_full.columns]
-print(f"X_ltbx_columns_after: {X_ltbx.columns}")
 
 full_ltbx_cohort = xgb.DMatrix(X_ltbx, label=y_ltbx_encoded, enable_categorical=True)
 
