@@ -62,7 +62,7 @@ tfx_cutoff = 0.03
 # progression_group_tfx_prog_days_median	progression_group_tfx_prog_days_quartile	progression_group_T_cycles_1_vs_6	
 # progression_group_T_cycles_2_vs_6	progression_group_T_cycles_1_2_vs_5_6	progression_group_T_cycles_1-5_vs_6
 
-responder_group = "progression_group_T_cycles_1_vs_6"
+responder_group = "progression_group_survival_days_252_cutoff"
 
 predictor_values = ["TFx_C1", "LOH.Score_C1", "TMB_C1"]
 
@@ -161,13 +161,29 @@ print(f"y_train_mc: \n{type(y_train_mc)}\n")
 print(f"y_test_mc: \n{y_test_mc}\n")
 print(f"y_ltbx: \n{y_ltbx}\n")
 
-# Drop responder column 
-X_train_mc_df = mc_train.drop(columns=responder_group)
-X_test_mc_df = mc_test.drop(columns=responder_group)
-X_ltbx_df = ltbx_cohort.drop(columns=responder_group)
-print(f"X_train_mc_df: \n{X_train_mc_df.index}\n")
-print(f"X_test_mc_df: \n{X_test_mc_df.index}\n")
-print(f"X_ltbx_df: \n{X_ltbx_df.index}\n")
+# Save columns that are already on a 0-1 scale
+save_columns = [c for c in predictor_values if c not in [responder_group, "TMB_C1"]]
+save_columns.append("genomic_instability")
+print(save_columns)
+
+print(mc_train.columns)
+
+mc_train_extra_columns_to_save = mc_train[save_columns].copy()
+mc_test_extra_columns_to_save = mc_test[save_columns].copy()
+ltbx_cohort_extra_columns_to_save = ltbx_cohort[save_columns].copy()
+print(f"mc_train_extra_columns_to_save: \n{mc_train_extra_columns_to_save}\n")
+print(f"mc_test_extra_columns_to_save: \n{mc_test_extra_columns_to_save}\n")
+print(f"ltbx_cohort_extra_columns_to_save: \n{ltbx_cohort_extra_columns_to_save}\n")
+
+
+# Drop responder and saved columns
+columns_to_drop = save_columns + [responder_group]
+X_train_mc_df = mc_train.drop(columns=columns_to_drop)
+X_test_mc_df = mc_test.drop(columns=columns_to_drop)
+X_ltbx_df = ltbx_cohort.drop(columns=columns_to_drop)
+print(f"X_train_mc_df: \n{X_train_mc_df}\n")
+print(f"X_test_mc_df: \n{X_test_mc_df}\n")
+print(f"X_ltbx_df: \n{X_ltbx_df}\n")
 
 # Normalize along the features axis 
 scaler = StandardScaler()
@@ -182,6 +198,14 @@ print(f"X_ltbx: \n{X_ltbx}\n")
 X_train_mc = pd.DataFrame(X_train_mc, columns=X_train_mc_df.columns, index=X_train_mc_df.index)
 X_test_mc = pd.DataFrame(X_test_mc, columns=X_test_mc_df.columns, index=X_test_mc_df.index)
 X_ltbx = pd.DataFrame(X_ltbx, columns=X_ltbx_df.columns, index=X_ltbx_df.index)
+print(f"X_train_mc: \n{X_train_mc.shape}\n")
+print(f"X_test_mc: \n{X_test_mc.shape}\n")
+print(f"X_ltbx: \n{X_ltbx.shape}\n")
+
+# Merge extra saved columns
+X_train_mc = pd.merge(X_train_mc, mc_train_extra_columns_to_save, left_index=True, right_index=True, how='inner')
+X_test_mc = pd.merge(X_test_mc, mc_test_extra_columns_to_save, left_index=True, right_index=True, how='inner')
+X_ltbx = pd.merge(X_ltbx, ltbx_cohort_extra_columns_to_save, left_index=True, right_index=True, how='inner')
 print(f"X_train_mc: \n{X_train_mc}\n")
 print(f"X_test_mc: \n{X_test_mc}\n")
 print(f"X_ltbx: \n{X_ltbx}\n")
@@ -210,12 +234,11 @@ print()
 print(f"y_ltbx_encoded: \n{y_ltbx_encoded}")
 print()
 
-print(f"X_train_mc: \n{X_train_mc.isna().any().any()}")
-print(f"X_test_mc: \n{X_test_mc.isna().any().any()}")
-print(f"y_train_mc_encoded: \n{np.isnan(y_train_mc_encoded)}")
-print(f"y_test_mc_encoded: \n{np.isnan(y_test_mc_encoded)}")
-print(f"X_ltbx: \n{X_ltbx.isna().any().any()}")
-print(f"y_ltbx_encoded: \n{np.isnan(y_ltbx_encoded)}")
+if X_train_mc.columns.equals(X_test_mc.columns) and X_test_mc.columns.equals(X_ltbx.columns):
+    print("Same")
+else:
+    print("different")
+
 
 # *******************
 # TRAIN MODEL
@@ -358,6 +381,11 @@ print(f"feature_importance: {feature_importance}")
 # *************************************
 # TEST AND EVALUATE MODEL ON 2ND COHORT
 # *************************************
+
+# Reset order of X_ltbx columns
+print(f"X_ltbx_columns_before: {X_ltbx.columns}")
+X_ltbx = X_ltbx[X_mc_full.columns]
+print(f"X_ltbx_columns_after: {X_ltbx.columns}")
 
 full_ltbx_cohort = xgb.DMatrix(X_ltbx, label=y_ltbx_encoded, enable_categorical=True)
 
