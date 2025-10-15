@@ -1,8 +1,6 @@
-<img src="misc/colorful_decision_tree.png" width="140" align="left">
+# &nbsp;&nbsp;Prognostic Model for Treatment Response in mCRPC <img src="misc/graph.png" width="140" align="left">
 
-# Prognostic Model for Treatment Response in mCRPC
-
-An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
+&nbsp;&nbsp;An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
 
 <br></br>
 
