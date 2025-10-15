@@ -1,8 +1,7 @@
-# Prognostic Model for Treatment Response in mCRPC <img src="misc/graph.png" width="140" align="left">
-As a tool for cancer subtype prediction, Keraon uses features derived from cell-free DNA (cfDNA) in conjunction
-with PDX reference models to perform both classification and heterogenous phenotype fraction estimation.
+# Prognostic Model for Treatment Response <img src="misc/graph.png" width="140" align="left">
 
 An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
+
 <br/><br/>
 
 ## Description
