@@ -40,12 +40,12 @@ os.environ['PYTHONHASHSEED'] = str(RANDOM_SEED)
 # LOAD DATA
 # !!!!!!!!!!!!!!!!!!
 
-pluvicto_master_sheet_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/data-files/pluvicto_survival_clean_with_response_groups.csv"
-rna_seq_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/data-files/predictions_tumor_pluvicto.tsv"
-tfbs_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/scripts/outputs/data-tables/heatmap_data_table.tsv"
-FGA_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/scripts/outputs/data-tables/FGA_data_table.tsv"
+master_sheet_file = "/path/to/meta/data" 
+rna_seq_data_file = "/path/to/rna/seq/data" # Data must be in CPMs
+tfbs_data_file = "/path/to/tfbs/data"
+FGA_data_file = "/path/to/FGA/data"
 
-pluvicto_master_sheet = pd.read_csv(pluvicto_master_sheet_file, index_col=0)
+master_sheet = pd.read_csv(master_sheet_file, index_col=0)
 rna_seq_data = pd.read_table(rna_seq_data_file, sep="\t", index_col = 0)
 tfbs_data = pd.read_table(tfbs_data_file, sep="\t", index_col = 0)
 FGA_data = pd.read_table(FGA_data_file, sep="\t", index_col=0)
@@ -112,10 +112,10 @@ print()
 predictor_values.append(responder_group)
 
 # Remove patients at C2 and with less than 10% TFx
-genomic_data, pluvicto_master_sheet = clean_patient_names(genomic_data, pluvicto_master_sheet, predictor_values, "C2", tfx_cutoff)
+genomic_data, master_sheet = clean_patient_names(genomic_data, master_sheet, predictor_values, "C2", tfx_cutoff)
 print(f"genomic_data: \n{genomic_data}")
 print()
-print(f"pluvicto_master_sheet: \n{pluvicto_master_sheet}")
+print(f"master_sheet: \n{master_sheet}")
 print()
 
 FGA_column_filtered = extract_FGA(FGA_data, "C1")
@@ -124,7 +124,7 @@ print(f"length: \n{len(FGA_column_filtered)}")
 print()
 
 # Append responder group to predictor_value and Combine dataframes
-combined_dfs = combine_dataframes(genomic_data, pluvicto_master_sheet, FGA_data, predictor_values)
+combined_dfs = combine_dataframes(genomic_data, master_sheet, FGA_data, predictor_values)
 
 print(f"combined_dfs: \n{combined_dfs}")
 print()
