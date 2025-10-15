@@ -3,7 +3,6 @@
 # Prognostic Model for Treatment Response in mCRPC
 
 An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
-
 <br/><br/>
 
 ## Description
