@@ -1,9 +1,11 @@
 
-<h1>Prognostic Model for Treatment Response in mCRPC<img src="misc/graph.png" width="140" align="left" style="margin-right: 15px;"></h1>
+# Keraon <img src="misc/graph.png" width="140" align="left">
+As a tool for cancer subtype prediction, Keraon uses features derived from cell-free DNA (cfDNA) in conjunction
+with PDX reference models to perform both classification and heterogenous phenotype fraction estimation.
 
-An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
-
-<br/>
+_Keraon_ (Ceraon) is named for the Greek god of the ritualistic mixing of wine.  
+Like Keraon, this tool knows what went into the mix.
+<br/><br/>
 
 ## Description
 This script uses a machine learning algorithm called XGBoost, which is a gradient boosting algorithm, to predict response groups. It uses genomic data such as RNA-seq data or TFBS data from tools like *[Triton](https://github.com/GavinHaLab/TritonNP)*, and uses features such as tumor fraction (TFx), fraction genome altered (FGA), loss of heterozygozity, and tumor mutational burden as covariates.
