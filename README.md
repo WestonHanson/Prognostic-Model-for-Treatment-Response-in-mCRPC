@@ -1,4 +1,4 @@
-# Prognostic Model for Treatment Response <img src="misc/graph.png" width="140" align="left">
+# Prognostic Model for Patient Response <img src="misc/graph.png" width="140" align="left">
 
 An XGBoost machine learning algorithm built to determine treatment response in mCRPC ultra-low pass whole genome sequencing (ULP-WGS) data.
 
