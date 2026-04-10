@@ -1,4 +1,4 @@
-<img src="misc/colorful_decision_tree.png" width="140" align="left">
+<img src="misc/graph.png" width="140" align="left">
 
 # Prognostic Model for Treatment Response in mCRPC
 

@@ -46,12 +46,13 @@ curr_time = time.time()
 # LOAD DATA
 # !!!!!!!!!!!!!!!!!!
 
-pluvicto_master_sheet_file = "/fh/fast/ha_g/user/rpatton/PSMA_data/pluvicto_survival_clean_updated.csv"
-tfbs_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/scripts/outputs/data-tables/heatmap_data_table.tsv"
-FGA_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/scripts/outputs/data-tables/FGA_data_table.tsv"
-clinical_data_file = "/fh/fast/ha_g/user/apmcdeed/Pluvicto/combined_model/input_data/baseline_clinical.csv"
-proteus_gsva_data_file = "/fh/fast/ha_g/user/rpatton/PSMA_data/Proteus/Pluvicto_predicted_gsva.txt"
-entropy_data_file = "/fh/fast/ha_g/user/whanson/PSMA_Lutetium_whanson/genome_instability/scripts/outputs/data-tables/entropy-tables-ulp_curated-Corrected_Copy_Number/base_entropy_hn_normalized_logged_per_chr_table.csv"
+# You can change the name here and add more or less - need to update PROCESS DATA section if you change these variables 
+pluvicto_master_sheet_file = "full/path/to/pluvicto_master_sheet_file"
+tfbs_data_file = "full/path/to/tfbs_data_file"
+FGA_data_file = "full/path/to/FGA_data_file"
+clinical_data_file = "full/path/to/clinical_data_file"
+proteus_gsva_data_file = "full/path/to/proteus_gsva_data_file"
+entropy_data_file = "full/path/to/entropy_data_file"
 
 pluvicto_master_sheet_og = pd.read_csv(pluvicto_master_sheet_file, index_col=0)
 tfbs_data_og = pd.read_table(tfbs_data_file, sep="\t", index_col = 0)
@@ -65,8 +66,8 @@ entropy_data_og = pd.read_csv(entropy_data_file, index_col=0)
 # !!!!!!!!!!!!!!!!!!!!
 
 # Name model version
-model_ver = "v0.8.0"
-model_subver = "v0.8.3"
+model_ver = "v0.0.0"
+model_subver = "v0.0.1"
 
 # ********************
 # VERSION MAINTENANCE
