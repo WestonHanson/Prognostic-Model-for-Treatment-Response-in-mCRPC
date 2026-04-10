@@ -1,0 +1,17 @@
+{
+    "TFx": {
+        "responder_group": "",
+        "feature_selection_methods": [null],
+        "tfx_cutoff": 0.00,
+        "cycle_filter": "",
+        "pluvicto_master_sheet_cols": null,
+        "tfbs_data_cols": null,
+        "FGA_data_cols": null,
+        "clinical_data_cols": null,
+        "proteus_gsva_data_cols": null,
+        "entropy_data_cols": null,
+        "subset_for_top_features": false,
+        "predictor_subset_num": null,
+        "top_feature_num": null
+    }
+}

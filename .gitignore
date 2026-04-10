@@ -1,0 +1,10 @@
+/saved-models/*
+!/saved-models/.gitkeep
+!/saved-models/VERSION_CTRL.md
+
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+
+.DS_Store
